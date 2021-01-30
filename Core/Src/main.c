@@ -49,6 +49,7 @@ static void UpdateDebugger(void);
 
 inline void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+  uint32_t now;
   switch(GPIO_Pin)
   {
     case SENS_CSPS_Pin :
@@ -58,7 +59,7 @@ inline void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
       acis_hall_exti();
       break;
     case ADC_STATUS_Pin :
-      //HAL_TIM_Base_Start_IT(&htim7);
+      HAL_TIM_Base_Start_IT(&htim7);
       break;
     default:
       break;
@@ -67,7 +68,7 @@ inline void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 inline void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  static uint8_t ms_tim = 0;
+  static uint16_t ms_tim = 0;
   if(htim == &htim4)
   {
     acis_loop();
@@ -79,9 +80,10 @@ inline void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
   else if(htim == &htim7)
   {
-    //map_adc_read();
+    map_adc_read();
   }
 }
+
 
 int main(void)
 {
@@ -95,7 +97,7 @@ int main(void)
 
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_IWDG_Init();
+  //MX_IWDG_Init();
   MX_USART1_UART_Init();  //Control Communication
   MX_SPI2_Init(); //SPI Flash
   MX_ADC1_Init(); //Temperature and battery sensor
@@ -178,7 +180,7 @@ void SystemClock_Config(void)
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = 12;
+  RCC_OscInitStruct.HSICalibrationValue = 10;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
@@ -246,7 +248,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
   hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T8_TRGO;
   hadc1.Init.DataAlign = ADC_DATAALIGN_LEFT;
-  hadc1.Init.NbrOfConversion = 3;
+  hadc1.Init.NbrOfConversion = 2;
   hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -272,12 +274,14 @@ static void MX_ADC1_Init(void)
   }
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
+  /*
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_3;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
   }
+  */
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
@@ -486,7 +490,7 @@ static void MX_TIM4_Init(void)
   htim4.Instance = TIM4;
   htim4.Init.Prescaler = (HAL_RCC_GetPCLK1Freq() * 2 / 1000000) - 1; //This is to set prescaler to 1 MHz
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 19;
+  htim4.Init.Period = 14;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
@@ -629,7 +633,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 6750000;
+  huart1.Init.BaudRate = 3375000;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
