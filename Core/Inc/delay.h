@@ -9,6 +9,7 @@
 extern volatile uint32_t DelStart[COUNTERS];
 
 extern void DelayInit(void);
+extern void DelayNs(uint32_t micros);
 extern void DelayUs(uint32_t micros);
 extern void DelayMs(uint32_t millis);
 extern uint32_t DelayDiff(uint32_t a, uint32_t b);

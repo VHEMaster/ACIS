@@ -2,6 +2,7 @@
 #include "csps.h"
 #include "map.h"
 #include "delay.h"
+#include "xCommand.h"
 #include <math.h>
 
 #define TABLE_SETUPS_MAX 4
@@ -278,7 +279,6 @@ inline void acis_loop(void)
   static uint8_t ignited[2] = { 1,1 };
   float angle[2] = { 0.0f, 0.0f };
   float anglesbeforeignite[2];
-  static float oldsaturate = 0;
   angle[0] = csps_getangle14();
   angle[1] = csps_getangle23from14(angle[0]);
   sAcisIgnTable * table = NULL;
@@ -298,7 +298,7 @@ inline void acis_loop(void)
     table = &acis_config.tables[table_num];
 
 
-  float ignite = 0.0f;
+  float ignite = pressure / 4200.0f;
 
   if(period < IGN_SATURATION + IGN_PULSE)
   {
@@ -321,33 +321,36 @@ inline void acis_loop(void)
     for(int i = 0; i < 2; i++)
     {
 
+
       if(angle[i] < -ignite)
         anglesbeforeignite[i] = -angle[i] - ignite;
       else
         anglesbeforeignite[i] = 360.0f - angle[i] - ignite;
 
+      if(anglesbeforeignite[i] - oldanglesbeforeignite[i] > 0.0f && anglesbeforeignite[i] - oldanglesbeforeignite[i] < 180.0f)
+        anglesbeforeignite[i] = oldanglesbeforeignite[i];
+
       if(anglesbeforeignite[i] - saturate < 0.0f)
       {
-        if(!saturated[i])
+        if(!saturated[i] && !ignited[0])
         {
           saturated[i] = 1;
           acis_saturate(i);
         }
       }
-      else saturated[i] = 0;
 
       if(oldanglesbeforeignite[i] - anglesbeforeignite[i] < 0.0f)
       {
-        if(!ignited[i])
+        if(!ignited[i] && saturated[i])
         {
           ignited[i] = 1;
+          saturated[i] = 0;
           acis_ignite(i);
         }
       }
       else ignited[i] = 0;
 
       oldanglesbeforeignite[i] = anglesbeforeignite[i];
-
     }
   }
   else
@@ -355,11 +358,20 @@ inline void acis_loop(void)
     angle_ignite = 0;
   }
 
-  oldsaturate = saturate;
-
   acis_hall_loop();
 
   acis_ignition_loop();
+}
+
+
+void acis_parse_command(eTransChannels xChaSrc, uint8_t * msgBuf, uint32_t length)
+{
+
+}
+
+inline void acis_send_command(eTransChannels xChaDst, uint8_t * msgBuf, uint32_t length)
+{
+  xSender(xChaDst, msgBuf, length);
 }
 
 

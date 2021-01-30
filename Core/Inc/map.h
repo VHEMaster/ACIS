@@ -13,6 +13,7 @@
 extern void map_init(void);
 extern void map_adc_read(void);
 extern float map_getpressure(void);
+extern uint8_t map_iserror(void);
 
 
 #endif /* INC_MAP_H_ */

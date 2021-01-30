@@ -13,8 +13,7 @@ void DelayInit(void)
     TIM_MasterConfigTypeDef sMasterConfig;
 
     htim_delay.Instance = DelayTimer;
-
-    htim_delay.Init.Prescaler = (HAL_RCC_GetPCLK1Freq() * 2 / 1000000) - 1; //This is to set prescaler to 1 MHz
+    htim_delay.Init.Prescaler = (HAL_RCC_GetPCLK1Freq() * 2 / 1000000) - 1;
     htim_delay.Init.CounterMode = TIM_COUNTERMODE_UP;
     htim_delay.Init.Period = 0xFFFFFFFF;
     htim_delay.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -31,6 +30,12 @@ void DelayInit(void)
 
 }
  
+inline void DelayNs(uint32_t val)
+{
+  uint32_t tickstart = Delay_Tick * 1000;
+  while(DelayDiff(Delay_Tick * 1000, tickstart) < val) {}
+}
+
 inline void DelayUs(uint32_t val)
 {
   uint32_t tickstart = Delay_Tick;
@@ -44,9 +49,9 @@ inline void DelayMs(uint32_t val)
 
 inline uint32_t DelayDiff(uint32_t a, uint32_t b)
 {
-	if(a >= b)
-		return a - b;
-	return (0xFFFFFFFF - b) + a;
+  if(a >= b)
+    return (a - b);
+  return ((0xFFFFFFFF - b) + a);
 }
 
 inline uint32_t DelayStopCount(uint32_t counter)

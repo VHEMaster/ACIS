@@ -3,6 +3,7 @@
 #include "acis.h"
 #include "csps.h"
 #include "map.h"
+#include "xCommand.h"
 
 #define CRC_POLY 0xA001
 
@@ -49,7 +50,6 @@ static void UpdateDebugger(void);
 
 inline void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  uint32_t now;
   switch(GPIO_Pin)
   {
     case SENS_CSPS_Pin :
@@ -108,6 +108,9 @@ int main(void)
   MX_CRC_Init();
   MX_RNG_Init();
 
+  xFifosInit();
+  xGetterInit();
+
   DelayInit();
 
 
@@ -120,6 +123,7 @@ int main(void)
   {
     UpdateIWDG();
     UpdateDebugger();
+    //xGetterLoop();
 
   }
 }
