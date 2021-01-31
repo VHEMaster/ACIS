@@ -12,6 +12,7 @@
 #include "xCommand.h"
 
 extern void acis_loop(void);
+extern void acis_loop_irq(void);
 extern void acis_hall_exti(void);
 extern void acis_init(void);
 extern void acis_parse_command(eTransChannels xChaSrc, uint8_t * msgBuf, uint32_t length);

@@ -72,7 +72,7 @@ inline void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   static uint16_t ms_tim = 0;
   if(htim == &htim4)
   {
-    acis_loop();
+    acis_loop_irq();
     if(++ms_tim >= 500)
     {
       csps_loop();
@@ -136,6 +136,7 @@ int main(void)
     UpdateIWDG();
     UpdateDebugger();
     xGetterLoop();
+    acis_loop();
 
   }
 }
@@ -691,13 +692,13 @@ static void MX_DMA_Init(void)
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 15, 0); //SPI2_TX
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
   /* DMA2_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 6, 0); //ADC1
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 7, 0); //ADC1
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
   /* DMA2_Stream2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 8, 0); //USART1_RX
   HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
   /* DMA2_Stream7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 9, 0); //USART1_TX
+  HAL_NVIC_SetPriority(DMA2_Stream7_IRQn, 8, 0); //USART1_TX
   HAL_NVIC_EnableIRQ(DMA2_Stream7_IRQn);
 
 }

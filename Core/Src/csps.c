@@ -29,7 +29,6 @@ volatile float csps_errors = 0;
 volatile float csps_rpm = 0;
 volatile float csps_uspa = 0;
 volatile float csps_period = 0;
-volatile float avg = 0; //debug
 
 static sCspsData CspsData[DATA_SIZE];
 static sCspsData * volatile CspsDataPtr = &CspsData[0];
@@ -72,7 +71,6 @@ inline void csps_exti(void)
     average += DelayDiff(cspc_irq_data[i], cspc_irq_data[i - 1]);;
   }
   average /= (float)(IRQ_SIZE - 1);
-  avg = average / average_prev;
 
   if(average / average_prev > 1.0f + 1.0f / IRQ_SIZE)
   {
@@ -113,7 +111,8 @@ inline void csps_exti(void)
         prev = DelayDiff(cur, (DelayDiff(cur, prev) / 3));
         break;
       case 1:
-        prev = DelayDiff(cur, (DelayDiff(cur, prev) / 3)); // @suppress("No break at end of case")
+        prev = DelayDiff(cur, (DelayDiff(cur, prev) / 3));
+        /* no break */
       default:
         cs14 = csps_angle14 + 3.0f;
         if(cs14 > 180.0f) csps_angle14 = cs14 - 360.0f;
