@@ -3,6 +3,7 @@
 #include "acis.h"
 #include "csps.h"
 #include "map.h"
+#include "crc.h"
 #include "xCommand.h"
 
 #define CRC_POLY 0xA001
@@ -84,6 +85,15 @@ inline void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 }
 
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+  xDmaTxIrqHandler(huart);
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  xDmaErIrqHandler(huart);
+}
 
 int main(void)
 {
@@ -108,6 +118,8 @@ int main(void)
   MX_CRC_Init();
   MX_RNG_Init();
 
+  CRC16_RegisterHardware(&hcrc);
+
   xFifosInit();
   xGetterInit();
 
@@ -123,7 +135,7 @@ int main(void)
   {
     UpdateIWDG();
     UpdateDebugger();
-    //xGetterLoop();
+    xGetterLoop();
 
   }
 }
