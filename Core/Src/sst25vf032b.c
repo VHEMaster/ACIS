@@ -101,6 +101,7 @@ static inline HAL_StatusTypeDef SPI_CheckChip(void)
 
   HAL_GPIO_WritePin(SPI2_WP_GPIO_Port, SPI2_WP_Pin, GPIO_PIN_SET);
   tx[0] = 0x06;
+  SCB_CleanDCache_by_Addr((uint32_t*)tx, 1);
   SPI_NSS_ON();
   HAL_SPI_Transmit_DMA(hspi, tx, 1);
   while(!waitTxCplt()) {}
@@ -108,6 +109,7 @@ static inline HAL_StatusTypeDef SPI_CheckChip(void)
 
   tx[0] = 0x01;
   tx[1] = 0x00;
+  SCB_CleanDCache_by_Addr((uint32_t*)tx, 1);
   SPI_NSS_ON();
   HAL_SPI_Transmit_DMA(hspi, tx, 2);
   while(!waitTxCplt()) {}

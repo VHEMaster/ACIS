@@ -3,7 +3,7 @@
 #include <math.h>
 #include <string.h>
 
-#define ANGLE_INITIAL -114.0f
+#define ANGLE_INITIAL (-114.0f - 3.0f)
 #define IRQ_SIZE 8
 #define DATA_SIZE 16
 
@@ -27,6 +27,7 @@ volatile uint32_t csps_pulse_last = 0;
 volatile uint32_t csps_last = 0;
 volatile float csps_errors = 0;
 volatile float csps_rpm = 0;
+volatile float csps_rpm_gui = 0;
 volatile float csps_uspa = 0;
 volatile float csps_period = 0;
 
@@ -38,6 +39,8 @@ void csps_init(void)
 
 }
 
+#define csps_time_calculate(x) (1.0f / (x) * 60.0f / 120.0f * 3.0f)
+
 inline void csps_exti(void)
 {
   static float csps_angle14 = 0, csps_angle23 = 0;
@@ -46,15 +49,30 @@ inline void csps_exti(void)
   static uint8_t dataindex = 0;
   static uint32_t t1 = 0;
   static uint32_t t2 = 0;
+
+  const float uspa_koff = 1.0f / 7.0f;
+  float rpm_gui_koff = 1.0f / 50.0f;
+  float rpm_koff = 1.0f / 20.0f;
+
   uint32_t i, ticks, cur, prev;
   sCspsData data;
   float cs14, cs23;
   float average = 0;
   float diff = 0;
-  float rpm_koff = 1.0f / 60.0f;
-  float uspa_koff = 1.0f / 10.0f;
 
   cur = Delay_Tick;
+
+  if(csps_rpm < 1500)
+  {
+    if(DelayDiff(cur, csps_pulse_last) < csps_time_calculate(1500))
+      return;
+  }
+  else
+  {
+    if(DelayDiff(cur, csps_pulse_last) < csps_time_calculate(csps_rpm))
+      return;
+  }
+
   csps_pulse_last = cur;
   for(i = 1; i < IRQ_SIZE; i++)
     cspc_irq_data[i - 1] = cspc_irq_data[i];
@@ -88,10 +106,14 @@ inline void csps_exti(void)
       }
     }
   }
-  else if(t1 >= 116)
+  else
   {
-    t1 = 1;
-    csps_errors += 1.0f;
+    t2 = 0;
+    if(t1 >= 116)
+    {
+      t1 = 1;
+      csps_errors += 1.0f;
+    }
   }
 
   average_prev = average;
@@ -108,10 +130,10 @@ inline void csps_exti(void)
           csps_angle23 = ANGLE_INITIAL + 180.0f;
         cs14_p = csps_angle14 - 3.0f;
         cs23_p = csps_angle23 - 3.0f;
-        prev = DelayDiff(cur, (DelayDiff(cur, prev) / 3));
+        prev = (cur - (DelayDiff(cur, prev) / 3)) & DelayMask;
         break;
       case 1:
-        prev = DelayDiff(cur, (DelayDiff(cur, prev) / 3));
+        prev = (cur - (DelayDiff(cur, prev) / 3)) & DelayMask;
         /* no break */
       default:
         cs14 = csps_angle14 + 3.0f;
@@ -132,16 +154,20 @@ inline void csps_exti(void)
         break;
     }
 
-    if(csps_rpm == 0.0f)
+    if(csps_rpm < 200.0f)
       rpm_koff = 1.0f;
 
     diff = (float)DelayDiff(cur, prev);
 
-    if(csps_period > 1000000.0f)
-      csps_period = 1000000.0f;
+    if(csps_period > 10000000.0f)
+      csps_period = 10000000.0f;
 
     csps_period = csps_period * (1.0f - rpm_koff) + (diff * 120.0f) * rpm_koff;
     csps_rpm = 1000000.0f / csps_period * 60.0f;
+
+    if(csps_rpm < 400) rpm_gui_koff = 0.1f;
+
+    csps_rpm_gui = (1.0f - rpm_gui_koff) * csps_rpm_gui + csps_rpm * rpm_gui_koff;
     csps_uspa = csps_uspa * (1.0f - uspa_koff) + (diff / 3.0f) * uspa_koff;
 
     data.AngleCur14 = csps_angle14;
@@ -163,9 +189,10 @@ inline void csps_exti(void)
     data.DelayPrev = 0;
     data.DelayCur = 0;
     data.RPM = 0;
-    csps_rpm = 0;
     data.uSPA = 1.0f / csps_rpm;
     csps_period = 1.0f / csps_rpm;
+    csps_rpm = 0;
+    csps_rpm_gui = 0;
   }
   CspsData[dataindex] = data;
   CspsDataPtr = &CspsData[dataindex];
@@ -191,13 +218,16 @@ inline float csps_anglediff(float a, float b)
   else return 360 + a - b;
 }
 */
-volatile float rettttt;
+
 inline float csps_getangle14(void)
 {
   static float angle_prev = 0;
   float now = Delay_Tick;
   float angle, acur, aprev, mult, cur;
   sCspsData data = *CspsDataPtr;
+
+  if(!csps_rotates)
+    return 0.0f;
 
   cur = DelayDiff(data.DelayCur, data.DelayPrev);
   now = DelayDiff(now, data.DelayPrev);
@@ -231,6 +261,9 @@ inline float csps_getangle23(void)
   float angle, acur, aprev, mult, cur;
   sCspsData data = *CspsDataPtr;
 
+  if(!csps_rotates)
+    return 0.0f;
+
   cur = DelayDiff(data.DelayCur, data.DelayPrev);
   now = DelayDiff(now, data.DelayPrev);
 
@@ -258,6 +291,9 @@ inline float csps_getangle23(void)
 
 inline float csps_getangle23from14(float angle)
 {
+  if(!csps_rotates)
+    return 0.0f;
+
   if(angle > 0.0f) angle -= 180.0f;
   else angle += 180.0f;
   return angle;
@@ -266,6 +302,11 @@ inline float csps_getangle23from14(float angle)
 inline float csps_getrpm(void)
 {
   return csps_rpm;
+}
+
+inline float csps_getrpmgui(void)
+{
+  return csps_rpm_gui;
 }
 
 inline float csps_getuspa(void)
@@ -298,7 +339,6 @@ inline void csps_loop(void)
   static uint32_t last_error_null = 0;
 
   uint32_t pulse_last = csps_pulse_last;
-  uint32_t last = csps_last;
   uint32_t now = Delay_Tick;
 
   if(DelayDiff(now, pulse_last) > 50000)
@@ -308,13 +348,7 @@ inline void csps_loop(void)
       cspc_irq_data[i] = 0;
     csps_found = 0;
     csps_rpm = 0;
-    csps_period = 1.0f / csps_rpm;
-  }
-  else if(DelayDiff(now, last) > 3000000)
-  {
-    last = now;
-    csps_found = 0;
-    csps_rpm = 0;
+    csps_rpm_gui = 0;
     csps_rotates = 0;
     csps_period = 1.0f / csps_rpm;
   }

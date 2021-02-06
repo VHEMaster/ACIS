@@ -5,6 +5,7 @@
 #include "map.h"
 #include "crc.h"
 #include "xCommand.h"
+#include "sst25vf032b.h"
 
 #define CRC_POLY 0xA001
 
@@ -67,17 +68,21 @@ inline void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   }
 }
 
+volatile uint32_t TIME4 = 0;
+volatile uint32_t TIME44 = 0;
 inline void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   static uint16_t ms_tim = 0;
   if(htim == &htim4)
   {
+    TIME44 = Delay_Tick;
     acis_loop_irq();
     if(++ms_tim >= 500)
     {
       csps_loop();
       ms_tim = 0;
     }
+    TIME4 = Delay_Tick - TIME44;
   }
   else if(htim == &htim7)
   {
@@ -95,6 +100,38 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   xDmaErIrqHandler(huart);
 }
 
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef * hspi)
+{
+  if(hspi == &hspi2)
+  {
+    SST25_ErrorCallback(hspi);
+  }
+}
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef * hspi)
+{
+  if(hspi == &hspi2)
+  {
+    SST25_TxCpltCallback(hspi);
+  }
+}
+
+void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef * hspi)
+{
+  if(hspi == &hspi2)
+  {
+    SST25_RxCpltCallback(hspi);
+  }
+}
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef * hspi)
+{
+  if(hspi == &hspi2)
+  {
+    SST25_TxRxCpltCallback(hspi);
+  }
+}
+
+
 int main(void)
 {
   SCB_EnableICache();
@@ -107,7 +144,7 @@ int main(void)
 
   MX_GPIO_Init();
   MX_DMA_Init();
-  //MX_IWDG_Init();
+  MX_IWDG_Init();
   MX_USART1_UART_Init();  //Control Communication
   MX_SPI2_Init(); //SPI Flash
   MX_ADC1_Init(); //Temperature and battery sensor
@@ -117,13 +154,14 @@ int main(void)
   MX_TIM8_Init(); //ADCs trigger strobe
   MX_CRC_Init();
   MX_RNG_Init();
+  DelayInit();
+
+  SST25_Init(&hspi2);
 
   CRC16_RegisterHardware(&hcrc);
 
   xFifosInit();
   xGetterInit();
-
-  DelayInit();
 
 
   map_init();
@@ -137,7 +175,7 @@ int main(void)
     UpdateDebugger();
     xGetterLoop();
     acis_loop();
-
+    acis_deinitIfNeed();
   }
 }
 
@@ -197,7 +235,7 @@ void SystemClock_Config(void)
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = 10;
+  RCC_OscInitStruct.HSICalibrationValue = 7;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
@@ -730,8 +768,10 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(ADC_nCS_GPIO_Port, ADC_nCS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, ADC_FORMAT_Pin|ADC_BPO_Pin|SPI2_NSS_Pin|PROPANE_OUT_Pin
+  HAL_GPIO_WritePin(GPIOB, ADC_FORMAT_Pin|ADC_BPO_Pin|PROPANE_OUT_Pin
                           |PETROL_OUT_Pin, GPIO_PIN_RESET);
+
+  HAL_GPIO_WritePin(GPIOB, SPI2_NSS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(RELAY_START_GPIO_Port, RELAY_START_Pin, GPIO_PIN_RESET);
@@ -748,7 +788,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pins : SENS_HALL_Pin */
   GPIO_InitStruct.Pin = SENS_HALL_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : SENS_ACC_Pin */

@@ -1,5 +1,7 @@
 #include "main.h"
 
+#define SST25_SECTORSIZE 4096
+
 extern HAL_StatusTypeDef SST25_Init(SPI_HandleTypeDef * _hspi);
 extern uint8_t SST25_Read(uint32_t address, uint32_t size, uint8_t * buffer);
 extern uint8_t SST25_Write(uint32_t address, uint32_t size, const uint8_t * buffer);

@@ -15,7 +15,7 @@ void DelayInit(void)
     htim_delay.Instance = DelayTimer;
     htim_delay.Init.Prescaler = (HAL_RCC_GetPCLK1Freq() * 2 / 1000000) - 1;
     htim_delay.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim_delay.Init.Period = 0xFFFFFFFF;
+    htim_delay.Init.Period = DelayMask;
     htim_delay.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
     HAL_TIM_Base_Init(&htim_delay);
 
@@ -51,7 +51,7 @@ inline uint32_t DelayDiff(uint32_t a, uint32_t b)
 {
   if(a >= b)
     return (a - b);
-  return ((0xFFFFFFFF - b) + a);
+  return ((DelayMask - b) + a);
 }
 
 inline uint32_t DelayStopCount(uint32_t counter)
