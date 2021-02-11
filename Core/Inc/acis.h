@@ -14,6 +14,7 @@
 extern void acis_loop(void);
 extern void acis_loop_irq(void);
 extern void acis_hall_exti(void);
+extern void acis_adc_irq(uint16_t * data, uint32_t size);
 extern void acis_init(void);
 extern void acis_deinitIfNeed(void);
 extern void acis_parse_command(eTransChannels xChaSrc, uint8_t * msgBuf, uint32_t length);

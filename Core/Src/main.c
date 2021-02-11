@@ -11,6 +11,9 @@
 
 #define IS_DEBUGGER_ATTACHED() (DBGMCU->CR & 0x07)
 
+#define ADC_BUF_SIZE 1024
+uint16_t ADC_BUF[ADC_BUF_SIZE];
+
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
@@ -68,21 +71,17 @@ inline void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   }
 }
 
-volatile uint32_t TIME4 = 0;
-volatile uint32_t TIME44 = 0;
 inline void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   static uint16_t ms_tim = 0;
   if(htim == &htim4)
   {
-    TIME44 = Delay_Tick;
     acis_loop_irq();
     if(++ms_tim >= 500)
     {
       csps_loop();
       ms_tim = 0;
     }
-    TIME4 = Delay_Tick - TIME44;
   }
   else if(htim == &htim7)
   {
@@ -131,6 +130,22 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef * hspi)
   }
 }
 
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef * hadc)
+{
+  if(hadc == &hadc1)
+  {
+    acis_adc_irq(&ADC_BUF[0], ADC_BUF_SIZE / 2);
+  }
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef * hadc)
+{
+  if(hadc == &hadc1)
+  {
+    acis_adc_irq(&ADC_BUF[ADC_BUF_SIZE / 2], ADC_BUF_SIZE / 2);
+  }
+}
+
 
 int main(void)
 {
@@ -162,6 +177,8 @@ int main(void)
 
   xFifosInit();
   xGetterInit();
+
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_BUF, ADC_BUF_SIZE);
 
 
   map_init();
@@ -730,7 +747,7 @@ static void MX_DMA_Init(void)
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 15, 0); //SPI2_TX
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
   /* DMA2_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 7, 0); //ADC1
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 10, 0); //ADC1
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
   /* DMA2_Stream2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 8, 0); //USART1_RX
@@ -755,6 +772,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, VDD3V3EN_Pin|SPI2_WP_Pin|RELAY_IGN_Pin, GPIO_PIN_RESET);
@@ -775,6 +793,7 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(RELAY_START_GPIO_Port, RELAY_START_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(ECON_GPIO_Port, ECON_Pin, GPIO_PIN_RESET);
@@ -840,6 +859,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(SPI2_WP_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : TACHOMETER_Pin */
+  GPIO_InitStruct.Pin = TACHOMETER_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(TACHOMETER_GPIO_Port, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOH, &GPIO_InitStruct);
 
   /*Configure GPIO pins : USART1_COMM_Pin MCU_IGN_Pin */
   GPIO_InitStruct.Pin = USART1_COMM_Pin|MCU_IGN_Pin;

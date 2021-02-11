@@ -47,8 +47,8 @@ static inline void exitcritical(void)
 #endif
 
 #define UART_DMA_BUFFER (MAX_PACK_LEN * 2)
-#define RETRIES_TIMEOUT 5000
-#define RETRIES_MAX 20
+#define RETRIES_TIMEOUT 7000
+#define RETRIES_MAX 5
 
 typedef struct
 {

@@ -140,6 +140,8 @@ void Error_Handler(void);
 #define PROPANE_OUT_GPIO_Port GPIOB
 #define PETROL_OUT_Pin GPIO_PIN_9
 #define PETROL_OUT_GPIO_Port GPIOB
+#define TACHOMETER_GPIO_Port GPIOH
+#define TACHOMETER_Pin GPIO_PIN_0
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

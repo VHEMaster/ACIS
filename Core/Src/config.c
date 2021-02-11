@@ -488,7 +488,7 @@ HAL_StatusTypeDef config_default(sAcisConfig * config)
   for(int i = 0; i < sizeof(sAcisConfig); i++)
     ((uint8_t*)config)[i] = 0;
 
-  config->params.isCutoutEnabled = 1;
+  config->params.isCutoffEnabled = 1;
   config->params.isTemperatureEnabled = 1;
   config->params.isEconomEnabled = 1;
   config->params.isAutostartEnabled = 0;
@@ -503,12 +503,14 @@ HAL_StatusTypeDef config_default(sAcisConfig * config)
   config->params.switchPos2Table = 0;
   config->params.forceTableNumber = 0;
 
-  config->params.InitialRpmThreshold = 400;
   config->params.EconRpmThreshold = 2000;
-  config->params.CutoutRPM = 5000;
+  config->params.CutoffRPM = 5000;
 
-  config->tables_count = 1;
-  for(int i = 0; i < config->tables_count; i++)
+  for(int i = 0; i < TABLE_SETUPS_MAX; i++)
+    memset(&config->tables[i], 0, sizeof(sAcisIgnTable));
+
+  config->tables_count = TABLE_SETUPS_MAX;
+  for(int i = 0; i < 1; i++)
   {
 
     strcpy(config->tables[i].name, "Default 1");

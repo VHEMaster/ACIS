@@ -199,6 +199,20 @@ inline void csps_exti(void)
   if(++dataindex >= DATA_SIZE)
     dataindex = 0;
 
+  static float angle_tach = 0;
+  float angle_t = csps_angle14;
+  if((angle_t - angle_tach < 0.0f && angle_t - angle_tach > -90.0f) || angle_t - angle_tach > 90.0f)
+    angle_t = angle_tach;
+  angle_tach = angle_t;
+  if(angle_tach > -45 && angle_tach < 45)
+    HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_SET);
+  else if(angle_tach > 45 && angle_tach < 135)
+    HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_RESET);
+  else if(angle_tach > 135 || angle_tach < -135)
+    HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_SET);
+  else if(angle_tach < -45 && angle_tach > -135)
+    HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_RESET);
+
 }
 
 inline float csps_correctangle(float angle)
