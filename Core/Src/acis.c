@@ -13,8 +13,8 @@
 sAcisConfig acis_config;
 
 #define IGN_OVER_TIME 600000
-#define IGN_SATURATION 1800
-#define IGN_PULSE 2500
+#define IGN_SATURATION 1650
+#define IGN_PULSE 2400
 #define INITIAL_TIMEOUT 100000
 static uint32_t ign14_sat = 0;
 static uint32_t ign23_sat = 0;
@@ -24,6 +24,7 @@ static uint32_t ign14_prev = 0;
 static uint32_t ign23_prev = 0;
 static uint8_t ign_ftime = 1;
 
+static volatile uint8_t CanDeinit = 0;
 static volatile uint32_t hall_prev = 0;
 static volatile float hall_angle = 0;
 static volatile float hall_error = 0;
@@ -38,18 +39,6 @@ static float power_voltage = 0;
 static int8_t switch_fuel_pos = 0;
 static HAL_StatusTypeDef StatusInit = HAL_ERROR;
 
-typedef struct
-{
-    float RPM;
-    float Pressure;
-    float Load;
-    float Ignition;
-    uint32_t Time;
-}sDragPoint;
-
-#define DRAG_MAX_POINTS 3072
-#define DRAG_POINTS_DISTANCE 20000
-
 static sDragPoint DragPoints[DRAG_MAX_POINTS];
 static uint32_t DragPointsCount = 0;
 static float DragFromRPM = 0;
@@ -61,14 +50,14 @@ static uint8_t DragStatus = 0;
 static uint32_t DragTimeLast = 0;
 static uint32_t DragStartTime = 0;
 
-static uint8_t savereq = 0;
-static uint8_t loadreq = 0;
+static volatile uint8_t savereq = 0;
+static volatile uint8_t loadreq = 0;
 
 static volatile uint8_t saturated_14 = 0;
 static volatile uint8_t saturated_23 = 0;
 
-static eTransChannels savereqsrc;
-static eTransChannels loadreqsrc;
+static volatile eTransChannels savereqsrc;
+static volatile eTransChannels loadreqsrc;
 
 static uint16_t * volatile adc_buf_ptr = NULL;
 static volatile uint32_t adc_buf_size = 0;
@@ -89,29 +78,38 @@ void acis_init(void)
 {
   HAL_StatusTypeDef status = HAL_BUSY;
   protInit(&fifoSendingQueue, buffSendingQueue, 1, SENDING_QUEUE_SIZE);
+  HAL_GPIO_WritePin(VDD3V3EN_GPIO_Port, VDD3V3EN_Pin, GPIO_PIN_SET);
 
-  //do
-  //{
-  //  status = config_load(&acis_config);
-  //} while(status == HAL_BUSY);
+  do
+  {
+    status = config_load(&acis_config);
+  } while(status == HAL_BUSY);
 
   StatusInit = status;
 
-  //if(status != HAL_OK)
-  //{
+  if(status != HAL_OK)
+  {
     config_default(&acis_config);
-  //  do
-  //  {
-  //    status = config_save(&acis_config);
-  //  } while(status == HAL_BUSY);
-  //}
+    do
+    {
+      status = config_save(&acis_config);
+    } while(status == HAL_BUSY);
+  }
 
+  if(status != HAL_OK)
+  {
+    config_default(&acis_config);
+  }
+
+  CanDeinit = 1;
   HAL_TIM_Base_Start_IT(&htim4);
-  HAL_GPIO_WritePin(VDD3V3EN_GPIO_Port, VDD3V3EN_Pin, GPIO_PIN_SET);
 }
 
 static inline float gettempbyres(float resistance)
 {
+  const float koff = 0.1;
+  const float koff_inv = 1.0f-koff;
+  static float result_p = 0;
   const float resistances[22] = {100700,52700,28680,21450,16180,12300,9420,7280,5670,4450,3520,2796,2238,1802,1459,1188,973,667,467,332,241,177};
   const float temperatures[22] = {-40,-30,-20,-15,-10,-4,0,5,10,15,20,25,30,35,40,45,50,60,70,80,90,100};
   float result = 0.0f;
@@ -127,8 +125,8 @@ static inline float gettempbyres(float resistance)
   }
   else if(resistance <= resistances[(sizeof(resistances) / sizeof(float)) - 1])
   {
-    index1 = 4;
-    index2 = 5;
+    index1 = (sizeof(resistances) / sizeof(float)) - 2;
+    index2 = (sizeof(resistances) / sizeof(float)) - 1;
     temp1 = resistances[index1];
     temp2 = resistances[index2];
   }
@@ -161,12 +159,13 @@ static inline float gettempbyres(float resistance)
     else result = (tempt1 + tempt2) / 2.0f;
   }
   if(result > 150.0f) result = 150.0f;
-  return result;
+  result_p = result * koff + result_p * koff_inv;
+  return result_p;
 }
 
 void acis_deinitIfNeed(void)
 {
-  if(HAL_GPIO_ReadPin(MCU_IGN_GPIO_Port, MCU_IGN_Pin) == GPIO_PIN_SET)
+  if(CanDeinit && HAL_GPIO_ReadPin(MCU_IGN_GPIO_Port, MCU_IGN_Pin) == GPIO_PIN_SET)
     HAL_GPIO_WritePin(VDD3V3EN_GPIO_Port, VDD3V3EN_Pin, GPIO_PIN_RESET);
   else HAL_GPIO_WritePin(VDD3V3EN_GPIO_Port, VDD3V3EN_Pin, GPIO_PIN_SET);
 }
@@ -224,12 +223,138 @@ static inline void acis_ignite(uint8_t index)
     acis_ignite_23();
 }
 
-static inline void acis_saturate(uint8_t index)
+static inline void acis_saturate(int8_t index)
 {
+  static uint8_t cylinder14 = 0;
+  static uint8_t cylinder23 = 0;
+  static int8_t cutoffcnt0 = 0;
+  static int8_t cutoffcnt1 = 0;
+  static int8_t cutoffcnt2 = 0;
+  static int8_t cutoffcnt3 = 0;
+  static int8_t cutoffcnt4 = 0;
+  static int8_t cutoffcnt5 = 0;
+  static int8_t cutoffcnt6 = 0;
+  static int8_t index_prev = -1;
+
+  if(acis_config.params.isCutoffEnabled)
+  {
+    float rpm = csps_getrpmgui();
+    int32_t mode = acis_config.params.CutoffMode;
+    float cutoffrpm = acis_config.params.CutoffRPM;
+    if(rpm >= cutoffrpm)
+    {
+      if(mode == 0)
+        return;
+      else if(mode == 1)
+      {
+        if(cutoffcnt0 == -1)
+          cutoffcnt0 = 0;
+      }
+      else if(mode == 2)
+      {
+        if(cutoffcnt1 == -1)
+          cutoffcnt1 = 0;
+      }
+      else if(mode == 3)
+      {
+        if(cutoffcnt2 == -1)
+          cutoffcnt2 = 0;
+      }
+      else if(mode == 4)
+      {
+        if(cutoffcnt3 == -1)
+          cutoffcnt3 = 0;
+      }
+      else if(mode == 5)
+      {
+        if(cutoffcnt4 == -1)
+          cutoffcnt4 = 0;
+      }
+      else if(mode == 6)
+      {
+        if(cutoffcnt5 == -1)
+          cutoffcnt5 = 0;
+      }
+      else if(mode == 7)
+      {
+        if(cutoffcnt6 == -1)
+          cutoffcnt6 = 0;
+      }
+    }
+  }
+
+  if(index_prev != index)
+  {
+    index_prev = index;
+
+    if(cutoffcnt0 >= 0)
+    {
+      if(++cutoffcnt0 > 36)
+        cutoffcnt0 = -1;
+      else if(cutoffcnt0 <= 36-4)
+        return;
+    }
+
+    if(cutoffcnt1 >= 0)
+    {
+      if(++cutoffcnt1 > 24)
+        cutoffcnt1 = -1;
+      else if(cutoffcnt1 <= 24-4)
+        return;
+    }
+
+    if(cutoffcnt2 >= 0)
+    {
+      if(++cutoffcnt2 > 16)
+        cutoffcnt2 = -1;
+      else if(cutoffcnt2 <= 16-4)
+        return;
+    }
+
+    if(cutoffcnt3 >= 0)
+    {
+      if(++cutoffcnt3 > 8)
+        cutoffcnt3 = -1;
+      else if(cutoffcnt3 <= 8-4)
+        return;
+    }
+
+    if(cutoffcnt4 >= 0)
+    {
+      if(++cutoffcnt4 > 20)
+        cutoffcnt4 = -1;
+      else if((cutoffcnt4 % 5) != 0)
+        return;
+    }
+
+    if(cutoffcnt5 >= 0)
+    {
+      if(++cutoffcnt5 > 12)
+        cutoffcnt5 = -1;
+      else if((cutoffcnt5 % 3) != 0)
+        return;
+    }
+
+    if(cutoffcnt6 >= 0)
+    {
+      if(++cutoffcnt6 > 12)
+        cutoffcnt6 = -1;
+      else if((cutoffcnt6 % 3) == 0)
+        return;
+    }
+  }
+
   if(index == 0)
+  {
     acis_saturate_14();
+    cylinder14 ^= 1;
+  }
   else if(index == 1)
+  {
     acis_saturate_23();
+    cylinder23 ^= 1;
+  }
+
 }
 
 static inline void acis_ignition_loop(void)
@@ -343,14 +468,8 @@ inline void acis_hall_exti(void)
 
   if(cspsfound && acis_config.params.isIgnitionByHall)
   {
-    if(hall_cylinders == 1)
-    {
-      acis_ignite_14();
-    }
-    else if(hall_cylinders == 2)
-    {
-      acis_ignite_23();
-    }
+    acis_ignite(hall_cylinders - 1);
+
   }
   hall_rotates = 1;
 }
@@ -375,10 +494,13 @@ static inline void acis_hall_loop(void)
 
 static float CalculateIgnition(void)
 {
-  float rpm = csps_getrpm();
+  float rpm = csps_getrpmgui();
   float pressure = map_getpressure();
-  float temperature = 90.0f;
-  //float temperature = engine_temperature;
+  float temperature = engine_temperature;
+
+  if(map_iserror())
+    pressure = 100000.0f;
+
   uint8_t isIdle = HAL_GPIO_ReadPin(SENS_ACC_GPIO_Port, SENS_ACC_Pin) == GPIO_PIN_SET;
 
 
@@ -640,7 +762,7 @@ static float CalculateIgnition(void)
 
 static void LearnIgnition(void)
 {
-  if(!hall_rotates)
+  if(!hall_rotates || csps_iserror() || map_iserror())
     return;
 
   float rpm = csps_getrpm();
@@ -907,6 +1029,7 @@ static void LearnIgnition(void)
 
 inline void acis_loop_irq(void)
 {
+  static float ignite = 0;
   static float oldanglesbeforeignite[2] = {0,0};
   static uint8_t saturated[2] = { 1,1 };
   static uint8_t ignited[2] = { 1,1 };
@@ -920,12 +1043,15 @@ inline void acis_loop_irq(void)
   angle[0] = csps_getangle14();
   angle[1] = csps_getangle23from14(angle[0]);
 
+  const float angle_koff = 0.001f;
+  const float angle_koff_inv = 1.0f - angle_koff;
+
   if(!isIgn)
     return;
 
   if(acis_config.params.isEconOutAsStrobe)
   {
-    if(csps_isrotates() && angle[0] > -1.0f && angle[0] < 1.0f)
+    if(csps_isrotates() && angle[0] > -0.2f && angle[0] < 1.5f)
     {
       HAL_GPIO_WritePin(ECON_GPIO_Port, ECON_Pin, GPIO_PIN_SET);
     }
@@ -948,7 +1074,6 @@ inline void acis_loop_irq(void)
   else if(rpm < 1000) time_sat = 5000;
   else if(rpm < 1300) time_sat = 4000;
   else if(rpm < 1500) time_sat = 3000;
-  float ignite = 0;
 
   float found = csps_isfound();
 
@@ -962,7 +1087,7 @@ inline void acis_loop_irq(void)
 
     float saturate = time_sat / uspa;
 
-    ignite = angle_ignite;
+    ignite = angle_ignite * angle_koff + angle_ignite * angle_koff_inv;
     angle_saturate = saturate;
 
     angle_time = ignite * uspa;
@@ -980,13 +1105,13 @@ inline void acis_loop_irq(void)
 
       if(rpm < 350.0f && start_ign_allow[i] && angle[i] < 80.0f)
       {
-        if(start_ign_state[i] && DelayDiff(now, start_ign_last[i]) > 4000)
+        if(start_ign_state[i] && DelayDiff(now, start_ign_last[i]) > IGN_SATURATION)
         {
           acis_ignite(i);
           start_ign_state[i] = 0;
           start_ign_last[i] = now;
         }
-        else if(!start_ign_state[i] && DelayDiff(now, start_ign_last[i]) > 1000)
+        else if(!start_ign_state[i] && DelayDiff(now, start_ign_last[i]) > IGN_PULSE/2)
         {
           acis_saturate(i);
           start_ign_state[i] = 1;
@@ -1111,31 +1236,50 @@ inline void acis_loop(void)
       temperature_raw /= adc_size >> 1;
       voltage_raw /= adc_size >> 1;
 
-      power_voltage = voltage_raw / 65535.0f * 3.282f * 5.5f;
-      temp = temperature_raw / 65535.0f * 3.282f * 11.0f;
-      meter_resistance = 680.0f;
-      meter_resistance = (meter_resistance / (1.0f - (temp/power_voltage))) - meter_resistance;
-      engine_temperature = gettempbyres(meter_resistance);
+      power_voltage = voltage_raw / 65535.0f * 3.34f * 5.5f;
+      temp = temperature_raw / 65535.0f * 3.34f * 11.0f;
+
+      if(temp < 1.0f)
+        engine_temperature = 150.0f;
+      else
+      {
+        if(temp >= power_voltage)
+          temp = power_voltage;
+        meter_resistance = 200.0f;
+        meter_resistance = (meter_resistance / (1.0f - (temp/power_voltage))) - meter_resistance;
+        temp = gettempbyres(meter_resistance);
+        if(temp < -40.0f)
+          engine_temperature = -40.0f;
+        else if(temp > 150.0f)
+          engine_temperature = 150.0f;
+        else
+          engine_temperature = temp;
+      }
     }
   }
 
   /* =========================== Save & Load Procedures =========================== */
   if(!issaving && !isloading)
   {
-    if(savereq)
-      issaving = 1;
-    else if(loadreq)
+    if(savereq && !isloading)
+      issaving = 1, CanDeinit = 0;
+    else if(loadreq && !issaving)
       isloading = 1;
   }
 
   if(issaving)
   {
+    CanDeinit = 0;
     flashstatus = config_save(&acis_config);
     if(flashstatus != HAL_BUSY)
     {
       PK_SaveConfigAcknowledge.Destination = savereqsrc;
-      PK_SaveConfigAcknowledge.ErrorCode = status == HAL_OK ? 0 : 1;
+      PK_SaveConfigAcknowledge.ErrorCode = flashstatus == HAL_OK ? 0 : 1;
       protPushSequence(&fifoSendingQueue, &PK_SaveConfigAcknowledge, sizeof(PK_SaveConfigAcknowledge));
+      StatusInit = flashstatus;
+      issaving = 0;
+      CanDeinit = 1;
+      savereq = 0;
     }
   }
   else if(isloading)
@@ -1144,8 +1288,11 @@ inline void acis_loop(void)
     if(flashstatus != HAL_BUSY)
     {
       PK_RestoreConfigAcknowledge.Destination = loadreqsrc;
-      PK_RestoreConfigAcknowledge.ErrorCode = status == HAL_OK ? 0 : 1;
+      PK_RestoreConfigAcknowledge.ErrorCode = flashstatus == HAL_OK ? 0 : 1;
       protPushSequence(&fifoSendingQueue, &PK_RestoreConfigAcknowledge, sizeof(PK_RestoreConfigAcknowledge));
+      StatusInit = flashstatus;
+      isloading = 0;
+      loadreq = 0;
     }
   }
 
@@ -1265,7 +1412,7 @@ inline void acis_loop(void)
           if(DragPointsCount < DRAG_MAX_POINTS)
           {
             DragPoints[DragPointsCount].Ignition = angle_ignite;
-            DragPoints[DragPointsCount].RPM = rpm;
+            DragPoints[DragPointsCount].RPM = csps_getrpmgui();
             DragPoints[DragPointsCount].Pressure = pressure;
             DragPoints[DragPointsCount].Load = load;
             DragPoints[DragPointsCount].Time = DelayDiff(now, DragStartTime);
@@ -1300,7 +1447,7 @@ inline void acis_loop(void)
                 DragCompleted = 1;
                 DragTimeLast = 0;
               }
-              else if(rpm > DragFromRPM + 50.0f)
+              else if(rpm > DragFromRPM + 100.0f)
               {
                 DragStarted = 0;
                 DragStatus = 4;
@@ -1324,7 +1471,7 @@ inline void acis_loop(void)
       {
         if(DragFromRPM < DragToRPM)
         {
-          if(rpm >= DragFromRPM)
+          if(rpm > DragFromRPM)
           {
             if(DragTimeLast != 0)
             {
@@ -1348,7 +1495,7 @@ inline void acis_loop(void)
         }
         else if(DragFromRPM > DragToRPM)
         {
-          if(rpm <= DragFromRPM)
+          if(rpm < DragFromRPM)
           {
             if(DragTimeLast != 0)
             {
@@ -1421,9 +1568,11 @@ void acis_parse_command(eTransChannels xChaSrc, uint8_t * msgBuf, uint32_t lengt
       PK_GeneralStatusResponse.Voltage = power_voltage;
       PK_GeneralStatusResponse.Temperature = engine_temperature;
       PK_GeneralStatusResponse.valvenum = valve_current;
-      PK_GeneralStatusResponse.check = csps_iserror() || (hall_error > 1.0f) || PK_GeneralStatusResponse.Load == 0.0f;
+      PK_GeneralStatusResponse.check = (PK_GeneralStatusResponse.RPM < 10.0f && PK_GeneralStatusResponse.Pressure < 85000) ||
+          csps_iserror() || (hall_error > 1.0f) || PK_GeneralStatusResponse.Load == 0.0f || StatusInit != HAL_OK;
       PK_GeneralStatusResponse.tablenum = table_current;
-      strcpy(PK_GeneralStatusResponse.tablename, PK_GeneralStatusResponse.tablenum < TABLE_SETUPS_MAX ? (char*)acis_config.tables[PK_GeneralStatusResponse.tablenum].name : (char*)"");
+      if(StatusInit == HAL_OK) strcpy(PK_GeneralStatusResponse.tablename, PK_GeneralStatusResponse.tablenum < TABLE_SETUPS_MAX ? (char*)acis_config.tables[PK_GeneralStatusResponse.tablenum].name : (char*)"");
+      else strcpy(PK_GeneralStatusResponse.tablename, "Flash Error");
       protPushSequence(&fifoSendingQueue, &PK_GeneralStatusResponse, sizeof(PK_GeneralStatusResponse));
       break;
 
@@ -1564,6 +1713,13 @@ void acis_parse_command(eTransChannels xChaSrc, uint8_t * msgBuf, uint32_t lengt
       {
         savereqsrc = xChaSrc;
         savereq = 1;
+        CanDeinit = 0;
+      }
+      else if(loadreq)
+      {
+        PK_SaveConfigAcknowledge.Destination = xChaSrc;
+        PK_SaveConfigAcknowledge.ErrorCode = 3;
+        protPushSequence(&fifoSendingQueue, &PK_SaveConfigAcknowledge, sizeof(PK_SaveConfigAcknowledge));
       }
       else
       {
@@ -1579,6 +1735,12 @@ void acis_parse_command(eTransChannels xChaSrc, uint8_t * msgBuf, uint32_t lengt
       {
         loadreqsrc = xChaSrc;
         loadreq = 1;
+      }
+      else if(savereq)
+      {
+        PK_RestoreConfigAcknowledge.Destination = xChaSrc;
+        PK_RestoreConfigAcknowledge.ErrorCode = 3;
+        protPushSequence(&fifoSendingQueue, &PK_RestoreConfigAcknowledge, sizeof(PK_RestoreConfigAcknowledge));
       }
       else
       {
@@ -1637,6 +1799,7 @@ void acis_parse_command(eTransChannels xChaSrc, uint8_t * msgBuf, uint32_t lengt
       PK_DragUpdateResponse.CurrentPressure = map_getpressure();
       PK_DragUpdateResponse.CurrentLoad = map_getpressure() / 110000.0f * 100.0f;
       PK_DragUpdateResponse.TotalPoints = DragPointsCount;
+      PK_DragUpdateResponse.Started = DragStarted;
       PK_DragUpdateResponse.Completed = DragCompleted;
       PK_DragUpdateResponse.Time = DragStartTime > 0 ? DelayDiff(now, DragStartTime) : 0;
       if(DragFromRPM != PK_DragUpdateRequest.FromRPM || DragToRPM != PK_DragUpdateRequest.ToRPM)
@@ -1653,23 +1816,19 @@ void acis_parse_command(eTransChannels xChaSrc, uint8_t * msgBuf, uint32_t lengt
       PK_DragPointResponse.FromRPM = PK_DragStop.FromRPM;
       PK_DragPointResponse.ToRPM = PK_DragStop.ToRPM;
       PK_DragPointResponse.ErrorCode = 0;
-      dragpoint = PK_DragPointResponse.Point = PK_DragPointRequest.Point;
+      dragpoint = PK_DragPointResponse.PointNumber = PK_DragPointRequest.PointNumber;
       if(dragpoint >= DragPointsCount)
       {
-        PK_DragPointResponse.Pressure = 0;
-        PK_DragPointResponse.RPM = 0;
-        PK_DragPointResponse.Load = 0;
-        PK_DragPointResponse.Ignition = 0;
-        PK_DragPointResponse.Time = 0;
+        PK_DragPointResponse.Point.Pressure = 0;
+        PK_DragPointResponse.Point.RPM = 0;
+        PK_DragPointResponse.Point.Load = 0;
+        PK_DragPointResponse.Point.Ignition = 0;
+        PK_DragPointResponse.Point.Time = 0;
         PK_DragPointResponse.ErrorCode = 3;
       }
       else
       {
-        PK_DragPointResponse.Pressure = DragPoints[dragpoint].Pressure;
-        PK_DragPointResponse.RPM = DragPoints[dragpoint].RPM;
-        PK_DragPointResponse.Load = DragPoints[dragpoint].Load;
-        PK_DragPointResponse.Ignition = DragPoints[dragpoint].Ignition;
-        PK_DragPointResponse.Time = DragPoints[dragpoint].Time;
+        PK_DragPointResponse.Point = DragPoints[dragpoint];
         if(DragFromRPM != PK_DragPointRequest.FromRPM || DragToRPM != PK_DragPointRequest.ToRPM)
         {
           PK_DragPointResponse.ErrorCode = 2;

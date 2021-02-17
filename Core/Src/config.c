@@ -191,22 +191,22 @@ static void setconfig_standart16l(sAcisConfig * config, uint8_t i)
   config->tables[i].rotates[15] = 7500;
 
   config->tables[i].pressures_count = 16;
-  config->tables[i].pressures[0] = 28000.0f;
-  config->tables[i].pressures[1] = 32800.0f;
-  config->tables[i].pressures[2] = 37600.0f;
-  config->tables[i].pressures[3] = 42400.0f;
-  config->tables[i].pressures[4] = 47200.0f;
-  config->tables[i].pressures[5] = 52000.0f;
-  config->tables[i].pressures[6] = 56800.0f;
-  config->tables[i].pressures[7] = 61600.0f;
-  config->tables[i].pressures[8] = 66400.0f;
-  config->tables[i].pressures[9] = 71200.0f;
-  config->tables[i].pressures[10] = 76000.0f;
-  config->tables[i].pressures[11] = 80800.0f;
-  config->tables[i].pressures[12] = 85600.0f;
-  config->tables[i].pressures[13] = 90400.0f;
-  config->tables[i].pressures[14] = 95200.0f;
-  config->tables[i].pressures[15] = 100000.0f;
+  config->tables[i].pressures[0] = 6900.0f;
+  config->tables[i].pressures[1] = 13300.0f;
+  config->tables[i].pressures[2] = 19700.0f;
+  config->tables[i].pressures[3] = 26100.0f;
+  config->tables[i].pressures[4] = 32500.0f;
+  config->tables[i].pressures[5] = 38900.0f;
+  config->tables[i].pressures[6] = 45300.0f;
+  config->tables[i].pressures[7] = 51700.0f;
+  config->tables[i].pressures[8] = 58100.0f;
+  config->tables[i].pressures[9] = 64600.0f;
+  config->tables[i].pressures[10] = 71000.0f;
+  config->tables[i].pressures[11] = 77400.0f;
+  config->tables[i].pressures[12] = 83800.0f;
+  config->tables[i].pressures[13] = 90200.0f;
+  config->tables[i].pressures[14] = 96500.0f;
+  config->tables[i].pressures[15] = 103000.0f;
 
   config->tables[i].ignitions[0][0]  = 14.5f;
   config->tables[i].ignitions[0][1]  = 16.1f;
@@ -504,7 +504,8 @@ HAL_StatusTypeDef config_default(sAcisConfig * config)
   config->params.forceTableNumber = 0;
 
   config->params.EconRpmThreshold = 2000;
-  config->params.CutoffRPM = 5000;
+  config->params.CutoffRPM = 6000;
+  config->params.CutoffMode = 5;
 
   for(int i = 0; i < TABLE_SETUPS_MAX; i++)
     memset(&config->tables[i], 0, sizeof(sAcisIgnTable));

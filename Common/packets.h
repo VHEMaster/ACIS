@@ -17,7 +17,19 @@
 #define TABLE_STRING_MAX 12
 
 #define PACKET_TABLE_MAX_SIZE 224
-#define PACKET_CONFIG_MAX_SIZE (sizeof(sAcisParams)+(sizeof(uint32_t)*2))
+#define PACKET_CONFIG_MAX_SIZE PACKET_TABLE_MAX_SIZE
+
+#define DRAG_MAX_POINTS 3072
+#define DRAG_POINTS_DISTANCE 20000
+
+typedef struct
+{
+    float RPM;
+    float Pressure;
+    float Load;
+    float Ignition;
+    uint32_t Time;
+}sDragPoint;
 
 typedef enum
 {
@@ -76,8 +88,9 @@ typedef struct
 
     float EconRpmThreshold;
     float CutoffRPM;
+    int32_t CutoffMode;
 
-    uint32_t Reserved32[36];
+    int32_t Reserved32[31];
 }sAcisParams;
 
 typedef struct
@@ -302,6 +315,7 @@ typedef struct
   float CurrentIgnition;
   uint32_t Time;
   uint32_t TotalPoints;
+  uint8_t Started;
   uint8_t Completed;
 }PK_DragUpdateResponse_t;
 
@@ -323,7 +337,7 @@ typedef struct
   uint8_t PacketLength;
   uint8_t Destination;
   uint8_t Dummy;
-  uint32_t Point;
+  uint32_t PointNumber;
   float FromRPM;
   float ToRPM;
 }PK_DragPointRequest_t;
@@ -338,12 +352,8 @@ typedef struct
   uint8_t ErrorCode;
   float FromRPM;
   float ToRPM;
-  uint32_t Point;
-  uint32_t Time;
-  float RPM;
-  float Pressure;
-  float Load;
-  float Ignition;
+  uint32_t PointNumber;
+  sDragPoint Point;
 }PK_DragPointResponse_t;
 
 #define PK_DragStartAcknowledgeID 21

@@ -50,9 +50,9 @@ inline void csps_exti(void)
   static uint32_t t1 = 0;
   static uint32_t t2 = 0;
 
-  const float uspa_koff = 1.0f / 7.0f;
-  float rpm_gui_koff = 1.0f / 50.0f;
-  float rpm_koff = 1.0f / 20.0f;
+  const float uspa_koff = 1.0f / 10.0f;
+  float rpm_gui_koff = 1.0f / 60.0f;
+  float rpm_koff = 1.0f / 40.0f;
 
   uint32_t i, ticks, cur, prev;
   sCspsData data;
@@ -86,7 +86,7 @@ inline void csps_exti(void)
 
   for(i = 1; i < IRQ_SIZE; i++)
   {
-    average += DelayDiff(cspc_irq_data[i], cspc_irq_data[i - 1]);;
+    average += DelayDiff(cspc_irq_data[i], cspc_irq_data[i - 1]);
   }
   average /= (float)(IRQ_SIZE - 1);
 
@@ -99,11 +99,10 @@ inline void csps_exti(void)
       t2 = 0;
       if(ticks != 116)
         csps_errors += 1.0f;
-      else
-      {
-        csps_last = cur;
-        csps_found = 1;
-      }
+
+      csps_last = cur;
+      csps_found = 1;
+
     }
   }
   else

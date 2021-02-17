@@ -12,7 +12,7 @@
 #define IS_DEBUGGER_ATTACHED() (DBGMCU->CR & 0x07)
 
 #define ADC_BUF_SIZE 1024
-uint16_t ADC_BUF[ADC_BUF_SIZE];
+uint16_t ADC_BUF[ADC_BUF_SIZE] __attribute__((aligned(32)));
 
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
@@ -134,6 +134,7 @@ void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef * hadc)
 {
   if(hadc == &hadc1)
   {
+    SCB_InvalidateDCache_by_Addr((uint32_t*)&ADC_BUF[0], ADC_BUF_SIZE);
     acis_adc_irq(&ADC_BUF[0], ADC_BUF_SIZE / 2);
   }
 }
@@ -142,6 +143,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef * hadc)
 {
   if(hadc == &hadc1)
   {
+    SCB_InvalidateDCache_by_Addr((uint32_t*)&ADC_BUF[ADC_BUF_SIZE / 2], ADC_BUF_SIZE);
     acis_adc_irq(&ADC_BUF[ADC_BUF_SIZE / 2], ADC_BUF_SIZE / 2);
   }
 }
@@ -159,7 +161,7 @@ int main(void)
 
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_IWDG_Init();
+  //MX_IWDG_Init();
   MX_USART1_UART_Init();  //Control Communication
   MX_SPI2_Init(); //SPI Flash
   MX_ADC1_Init(); //Temperature and battery sensor
@@ -178,6 +180,7 @@ int main(void)
   xFifosInit();
   xGetterInit();
 
+  SCB_CleanDCache_by_Addr((uint32_t*)&ADC_BUF[0], ADC_BUF_SIZE*2);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)ADC_BUF, ADC_BUF_SIZE);
 
 
@@ -331,7 +334,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_12;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_56CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
