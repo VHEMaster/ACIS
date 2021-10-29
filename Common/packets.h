@@ -67,7 +67,10 @@ typedef struct
     float servo_acc[TABLE_TEMPERATURES_MAX];
     float servo_choke[TABLE_TEMPERATURES_MAX];
 
-    int32_t Reserved[64];
+    float fuel_rate;
+    float fuel_volume;
+
+    int32_t Reserved[62];
 }sAcisIgnTable __attribute__((aligned(32)));
 
 typedef struct
@@ -89,8 +92,15 @@ typedef struct
     float EconRpmThreshold;
     float CutoffRPM;
     int32_t CutoffMode;
+    float CutoffAngle;
+    int32_t isEconIgnitionOff;
+    int32_t isForceIdle;
+    int32_t engineVolume;
+    int32_t isForceIgnition;
+    int32_t forceIgnitionAngle;
+    int32_t hallLearningTable;
 
-    int32_t Reserved32[31];
+    int32_t Reserved32[24];
 }sAcisParams;
 
 typedef struct
@@ -98,6 +108,7 @@ typedef struct
     int32_t tables_count;
     sAcisParams params;
     sAcisIgnTable tables[TABLE_SETUPS_MAX];
+    uint32_t version;
     uint16_t crc;
 }sAcisConfig;
 
@@ -154,6 +165,7 @@ typedef struct
   float IgnitionTime;
   float Voltage;
   float Temperature;
+  float FuelUsage;
 }PK_GeneralStatusResponse_t;
 
 #define PK_TableMemoryRequestID 5
@@ -295,8 +307,6 @@ typedef struct
   uint8_t PacketLength;
   uint8_t Destination;
   uint8_t Dummy;
-  float FromRPM;
-  float ToRPM;
 }PK_DragUpdateRequest_t;
 
 #define PK_DragUpdateResponseID 17

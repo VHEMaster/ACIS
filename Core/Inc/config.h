@@ -14,5 +14,6 @@
 extern HAL_StatusTypeDef config_load(sAcisConfig * config);
 extern HAL_StatusTypeDef config_default(sAcisConfig * config);
 extern HAL_StatusTypeDef config_save(sAcisConfig * config);
+extern HAL_StatusTypeDef config_save_particial(sAcisConfig * config, void * from, uint32_t length);
 
 #endif /* INC_CONFIG_H_ */

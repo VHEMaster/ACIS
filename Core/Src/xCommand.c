@@ -47,8 +47,9 @@ static inline void exitcritical(void)
 #endif
 
 #define UART_DMA_BUFFER (MAX_PACK_LEN * 2)
-#define RETRIES_TIMEOUT 7000
-#define RETRIES_MAX 5
+#define RETRIES_TIMEOUT_PC 50000
+#define RETRIES_TIMEOUT_CTRL 10000
+#define RETRIES_MAX 20
 
 typedef struct
 {
@@ -60,6 +61,8 @@ typedef struct
     uint8_t BufParser[MAX_PACK_LEN];
     UART_HandleTypeDef * xUart;
     eTransChannels xChannels[4];
+    uint16_t ReceivedPackets[etrCount][10];
+    uint16_t ReceivedPacketId[etrCount];
     sProFIFO xTxFifo;
     sProFIFO xRxFifo;
     uint32_t dataReceiving;
@@ -252,7 +255,7 @@ int8_t xSender(eTransChannels xChaDest, uint8_t* xMsgPtr, uint32_t xMsgLen)
       }
       else
       {
-        if(DelayDiff(now, LastNotAckedTime) > RETRIES_TIMEOUT)
+        if(DelayDiff(now, LastNotAckedTime) > (xChaDest == etrPC ? RETRIES_TIMEOUT_PC : RETRIES_TIMEOUT_CTRL))
         {
           if(RetriesPacket > RETRIES_MAX)
           {
@@ -287,12 +290,13 @@ int8_t xSender(eTransChannels xChaDest, uint8_t* xMsgPtr, uint32_t xMsgLen)
 static inline void parser(sProFIFO* xFifo, uint32_t xPacketId, uint32_t xDataLen, eTransChannels xChaSrc, eTransChannels xChaDest) {
 
   uint32_t aCount;
-  uint8_t data;
-  uint8_t sCount;
+  uint8_t data, idis = 0;
+  uint32_t sCount;
   sGetterHandle * hDest = NULL;
   uint8_t header[8];
   for(int i = 0; i < sizeof(xHandles) / sizeof(xHandles[0]); i++)
   {
+    //TODO: fix mix of Source and Destination. Not critical now because it is one physical interface only
     for(int j = 0; j < sizeof(xHandles[j].xChannels) / sizeof(xHandles[j].xChannels[0]); j++)
     {
       if(xHandles[i].xChannels[j] == xChaSrc)
@@ -328,7 +332,21 @@ static inline void parser(sProFIFO* xFifo, uint32_t xPacketId, uint32_t xDataLen
 
               if(hDest) acker(hDest,xPacketId,xChaSrc);
 
-              acis_parse_command(xChaSrc, hDest->BufParser, aCount);
+              for(int i = 0; i < 10; i++)
+              {
+                if(hDest->ReceivedPackets[xChaSrc][i] == xPacketId)
+                {
+                  idis = 1;
+                  break;
+                }
+              }
+
+              if(!idis)
+              {
+                hDest->ReceivedPackets[xChaSrc][hDest->ReceivedPacketId[xChaSrc]] = xPacketId;
+                if(++hDest->ReceivedPacketId[xChaSrc] >= 10) hDest->ReceivedPacketId[xChaSrc] = 0;
+                acis_parse_command(xChaSrc, hDest->BufParser, aCount);
+              }
 
           // Signal package
           }

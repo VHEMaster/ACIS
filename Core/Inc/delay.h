@@ -15,5 +15,6 @@ extern void DelayNs(uint32_t micros);
 extern void DelayUs(uint32_t micros);
 extern void DelayMs(uint32_t millis);
 extern uint32_t DelayDiff(uint32_t a, uint32_t b);
+extern uint32_t HAL_DelayDiff(uint32_t a, uint32_t b);
 #define DelayStartCount(counter) (DelStart[counter]=Delay_Tick)
 extern uint32_t DelayStopCount(uint32_t counter);

@@ -54,6 +54,13 @@ inline uint32_t DelayDiff(uint32_t a, uint32_t b)
   return ((DelayMask - b) + a);
 }
 
+inline uint32_t HAL_DelayDiff(uint32_t a, uint32_t b)
+{
+  if(a >= b)
+    return (a - b);
+  return ((0xFFFFFFFF - b) + a);
+}
+
 inline uint32_t DelayStopCount(uint32_t counter)
 {
 	return DelayDiff(Delay_Tick, DelStart[counter]);

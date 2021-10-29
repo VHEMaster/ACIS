@@ -8,9 +8,10 @@
 #include "map.h"
 
 #define multiplier 1.0f
-#define lowpass_koff 0.05f
+#define lowpass_koff 0.02f
 static volatile float map_data = 101325.0f;
 static volatile uint8_t map_error = 0;
+static volatile uint8_t map_raw = 0;
 extern TIM_HandleTypeDef htim8;
 
 #define REF_VOLTAGE 3.32f
@@ -29,8 +30,9 @@ void map_init(void)
 inline void map_adc_read(void)
 {
   uint8_t portdata = GPIOA->IDR & 0xFF;
+  map_raw = portdata;
   float voltage = portdata / 50.0f;
-  if(voltage < 0.3f) map_error = 1;
+  if(voltage < 0.1f) map_error = 1;
   else map_error = 0;
   float pressure = (voltage - 0.5f) * 25517.0f;
   if(pressure < 0.0f)
@@ -41,6 +43,11 @@ inline void map_adc_read(void)
 inline float map_getpressure(void)
 {
   return map_data;
+}
+
+inline uint8_t map_getraw(void)
+{
+  return map_raw;
 }
 
 inline uint8_t map_iserror(void)

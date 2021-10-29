@@ -12,6 +12,7 @@
 
 extern void map_init(void);
 extern void map_adc_read(void);
+extern uint8_t map_getraw(void);
 extern float map_getpressure(void);
 extern uint8_t map_iserror(void);
 

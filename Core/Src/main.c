@@ -7,11 +7,9 @@
 #include "xCommand.h"
 #include "sst25vf032b.h"
 
-#define CRC_POLY 0xA001
-
 #define IS_DEBUGGER_ATTACHED() (DBGMCU->CR & 0x07)
 
-#define ADC_BUF_SIZE 1024
+#define ADC_BUF_SIZE 256
 uint16_t ADC_BUF[ADC_BUF_SIZE] __attribute__((aligned(32)));
 
 ADC_HandleTypeDef hadc1;
@@ -381,9 +379,9 @@ static void MX_CRC_Init(void)
   hcrc.Instance = CRC;
   hcrc.Init.DefaultPolynomialUse = DEFAULT_POLYNOMIAL_DISABLE;
   hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_DISABLE;
-  hcrc.Init.GeneratingPolynomial = CRC_POLY;
+  hcrc.Init.GeneratingPolynomial = 0x8005;
   hcrc.Init.CRCLength = CRC_POLYLENGTH_16B;
-  hcrc.Init.InitValue = 0;
+  hcrc.Init.InitValue = 0xFFFF;
   hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_BYTE;
   hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_ENABLE;
   hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_BYTES;
@@ -644,7 +642,7 @@ static void MX_TIM8_Init(void)
   htim8.Instance = TIM8;
   htim8.Init.Prescaler = (HAL_RCC_GetPCLK2Freq() * 2 / 1000000) - 1; //This is to set prescaler to 1 MHz
   htim8.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim8.Init.Period = 49;
+  htim8.Init.Period = 149;
   htim8.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim8.Init.RepetitionCounter = 0;
   htim8.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -832,7 +830,7 @@ static void MX_GPIO_Init(void)
                           |ADC4_Pin|ADC5_Pin|ADC6_Pin|ADC7_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  //HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : ADC_nCS_Pin ADC_FORMAT_Pin ADC_BPO_Pin PROPANE_OUT_Pin
                            PETROL_OUT_Pin */

@@ -3,8 +3,8 @@
 #include <math.h>
 #include <string.h>
 
-#define ANGLE_INITIAL (-114.0f - 3.0f)
-#define IRQ_SIZE 8
+#define ANGLE_INITIAL (-114.0f)
+#define IRQ_SIZE 16
 #define DATA_SIZE 16
 
 typedef struct
@@ -19,27 +19,58 @@ typedef struct
   float uSPA;
 }sCspsData;
 
+static const float csps_cors[116] = {
+    2.68668088f, 0.719637128f, 1.132915204f, 0.93333743f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f, 1.01200111f, 0.987573024f,
+    1.014849528f, 0.9962869f, 0.872279303f, 3.667010358f,
+};
 
-uint32_t cspc_irq_data[IRQ_SIZE] = {0};
-volatile uint8_t csps_found = 0;
-volatile uint8_t csps_rotates = 0;
-volatile uint32_t csps_pulse_last = 0;
-volatile uint32_t csps_last = 0;
-volatile float csps_errors = 0;
-volatile float csps_rpm = 0;
-volatile float csps_rpm_gui = 0;
-volatile float csps_uspa = 0;
-volatile float csps_period = 0;
+static float cpsp_dynamic_corr[116] = {0.0f};
+
+static uint32_t cspc_irq_data[IRQ_SIZE] = {0};
+static volatile uint8_t csps_found = 0;
+static volatile uint8_t csps_rotates = 0;
+static volatile uint32_t csps_pulse_last = 0;
+static volatile uint32_t csps_last = 0;
+static volatile float csps_errors = 0;
+static volatile float csps_rpm = 0;
+static volatile float csps_rpm_gui = 0;
+static volatile float csps_uspa = 0;
+static volatile float csps_period = 0;
 
 static sCspsData CspsData[DATA_SIZE];
 static sCspsData * volatile CspsDataPtr = &CspsData[0];
 
+static float csps_cors_avg = 1.0f;
+static float csps_cors_sum = 1.0f;
+
 void csps_init(void)
 {
+  float tval = 0;
+  for(int i = 0; i < 116; i++)
+    tval += csps_cors[i];
+  csps_cors_sum = (120.0f / tval) * 3.0f;
+  csps_cors_avg = tval / 116.0f;
 
+  for(int i = 0; i < 116; i++)
+  {
+    cpsp_dynamic_corr[i] = csps_cors[i];
+  }
 }
 
-#define csps_time_calculate(x) (1.0f / (x) * 60.0f / 120.0f * 3.0f)
+volatile uint32_t ticks = 0;
 
 inline void csps_exti(void)
 {
@@ -49,12 +80,14 @@ inline void csps_exti(void)
   static uint8_t dataindex = 0;
   static uint32_t t1 = 0;
   static uint32_t t2 = 0;
+  static GPIO_PinState pin_prev = GPIO_PIN_RESET;
+  GPIO_PinState pin_state;
+  static uint8_t found = 0;
 
-  const float uspa_koff = 1.0f / 10.0f;
-  float rpm_gui_koff = 1.0f / 60.0f;
-  float rpm_koff = 1.0f / 40.0f;
+  float rpm_gui_koff = 1.0f / 40.0f;
+  float rpm_koff = 1.0f / 10.0f;
 
-  uint32_t i, ticks, cur, prev;
+  uint32_t i, cur, prev;
   sCspsData data;
   float cs14, cs23;
   float average = 0;
@@ -62,27 +95,26 @@ inline void csps_exti(void)
 
   cur = Delay_Tick;
 
-  if(csps_rpm < 1500)
-  {
-    if(DelayDiff(cur, csps_pulse_last) < csps_time_calculate(1500))
-      return;
+  pin_state = HAL_GPIO_ReadPin(SENS_CSPS_GPIO_Port, SENS_CSPS_Pin);
+  if(pin_prev == pin_state) {
+    return;
   }
-  else
-  {
-    if(DelayDiff(cur, csps_pulse_last) < csps_time_calculate(csps_rpm))
-      return;
-  }
+
+  pin_prev = pin_state;
 
   csps_pulse_last = cur;
   for(i = 1; i < IRQ_SIZE; i++)
     cspc_irq_data[i - 1] = cspc_irq_data[i];
   cspc_irq_data[IRQ_SIZE - 1] = cur;
-  if(cspc_irq_data[0] == 0)
+  if(cspc_irq_data[0] == 0) {
     return;
+  }
   prev = cspc_irq_data[IRQ_SIZE - 2];
   csps_rotates = 1;
 
-  t1++;
+  if(found) {
+    t1++;
+  }
 
   for(i = 1; i < IRQ_SIZE; i++)
   {
@@ -95,13 +127,13 @@ inline void csps_exti(void)
     if(++t2 == 2)
     {
       ticks = t1;
-      t1 = 0;
-      t2 = 0;
-      if(ticks != 116)
+      if(found && t1 != 116) {
         csps_errors += 1.0f;
+      }
 
+      t1 = 0;
       csps_last = cur;
-      csps_found = 1;
+      found = 1;
 
     }
   }
@@ -117,57 +149,74 @@ inline void csps_exti(void)
 
   average_prev = average;
 
-  if(csps_found)
+  if(found)
   {
-    switch(t1)
+    float adder = csps_cors[t1] * csps_cors_sum;// * 3.0f;
+    static float adder_prev = 3.0f;
+
+    //adder = 3.0f;
+
+    switch(t2)
     {
-      case 0:
+      case 2:
         csps_angle14 = ANGLE_INITIAL;
         if (ANGLE_INITIAL > 0)
           csps_angle23 = ANGLE_INITIAL - 180.0f;
         else
           csps_angle23 = ANGLE_INITIAL + 180.0f;
-        cs14_p = csps_angle14 - 3.0f;
-        cs23_p = csps_angle23 - 3.0f;
-        prev = (cur - (DelayDiff(cur, prev) / 3)) & DelayMask;
+        cs14_p = csps_angle14 - csps_cors[115] * csps_cors_sum;
+        cs23_p = csps_angle23 - csps_cors[115] * csps_cors_sum;
+        //adder = 9.0f;
         break;
       case 1:
-        prev = (cur - (DelayDiff(cur, prev) / 3)) & DelayMask;
+        //adder = 9.0f;
         /* no break */
       default:
-        cs14 = csps_angle14 + 3.0f;
+        cs14 = csps_angle14 + adder;
         if(cs14 > 180.0f) csps_angle14 = cs14 - 360.0f;
         else csps_angle14 = cs14;
 
-        cs23 = csps_angle23 + 3.0f;
+        cs23 = csps_angle23 + adder;
         if(cs23 > 180.0f) csps_angle23 = cs23 - 360.0f;
         else csps_angle23 = cs23;
 
-        cs14_p += 3.0f;
+        cs14_p += adder_prev;
         if(cs14_p > 180.0f)
           cs14_p -= 360.0f;
 
-        cs23_p += 3.0f;
+        cs23_p += adder_prev;
         if(cs23_p > 180.0f)
           cs23_p -= 360.0f;
+
+        if((cs14_p - csps_angle14 > 0.0f || cs14_p - csps_angle14 < -90.0f) && cs14_p - csps_angle14 < 90.0f)
+        {
+          csps_angle14 = cs14_p;
+        }
+
+        if((cs23_p - csps_angle23 > 0.0f || cs23_p - csps_angle23 < -90.0f) && cs23_p - csps_angle23 < 90.0f)
+        {
+          csps_angle23 = cs23_p;
+        }
         break;
     }
 
+    adder_prev = adder;
+
     if(csps_rpm < 200.0f)
-      rpm_koff = 1.0f;
+      rpm_koff = 1.0f / 3.0f;
 
-    diff = (float)DelayDiff(cur, prev);
+    diff = (float)DelayDiff(cur, prev) / csps_cors[t1] * csps_cors_avg;
 
-    if(csps_period > 10000000.0f)
-      csps_period = 10000000.0f;
+    if(csps_period > 1000000.0f)
+      csps_period = 1000000.0f;
 
     csps_period = csps_period * (1.0f - rpm_koff) + (diff * 120.0f) * rpm_koff;
     csps_rpm = 1000000.0f / csps_period * 60.0f;
 
-    if(csps_rpm < 400) rpm_gui_koff = 0.1f;
+    if(csps_rpm < 400) rpm_gui_koff = 0.05f;
 
     csps_rpm_gui = (1.0f - rpm_gui_koff) * csps_rpm_gui + csps_rpm * rpm_gui_koff;
-    csps_uspa = csps_uspa * (1.0f - uspa_koff) + (diff / 3.0f) * uspa_koff;
+    csps_uspa = diff / 3.0f;
 
     data.AngleCur14 = csps_angle14;
     data.AngleCur23 = csps_angle23;
@@ -177,6 +226,9 @@ inline void csps_exti(void)
     data.DelayCur = cur;
     data.RPM = csps_rpm;
     data.uSPA = csps_uspa;
+
+    diff = DelayDiff(cur, prev);
+    //cpsp_dynamic_corr[t1] = cpsp_dynamic_corr[t1] * 0.95f + (120.0f / (csps_period / diff)) * 0.05f;
 
   }
   else
@@ -188,58 +240,47 @@ inline void csps_exti(void)
     data.DelayPrev = 0;
     data.DelayCur = 0;
     data.RPM = 0;
-    data.uSPA = 1.0f / csps_rpm;
-    csps_period = 1.0f / csps_rpm;
+    data.uSPA = 3000.0f;
+    csps_period = 1000000.0f;
     csps_rpm = 0;
     csps_rpm_gui = 0;
   }
+
   CspsData[dataindex] = data;
   CspsDataPtr = &CspsData[dataindex];
   if(++dataindex >= DATA_SIZE)
     dataindex = 0;
 
-  static float angle_tach = 0;
-  float angle_t = csps_angle14;
-  if((angle_t - angle_tach < 0.0f && angle_t - angle_tach > -90.0f) || angle_t - angle_tach > 90.0f)
-    angle_t = angle_tach;
-  angle_tach = angle_t;
-  if(angle_tach > -45 && angle_tach < 45)
+  csps_found = found;
+  if(t2 >= 2) t2 = 0;
+
+  //static float angle_tach = 0;
+  //float angle_t = csps_angle14;
+  //if((angle_t - angle_tach < 0.0f && angle_t - angle_tach > -90.0f) || angle_t - angle_tach > 90.0f)
+  //  angle_t = angle_tach;
+  //angle_tach = angle_t;
+
+  const float tach_duty_cycle = 0.25f;
+  float angle_tach = csps_angle14;
+
+  if(angle_tach >= 0.0f && angle_tach < 180.0f * tach_duty_cycle)
     HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_SET);
-  else if(angle_tach > 45 && angle_tach < 135)
+  else if(angle_tach >= 180.0f * tach_duty_cycle)
     HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_RESET);
-  else if(angle_tach > 135 || angle_tach < -135)
+  else if(angle_tach < -180.0f + 180.0f * tach_duty_cycle)
     HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_SET);
-  else if(angle_tach < -45 && angle_tach > -135)
+  else if(angle_tach >= -180.0f + 180.0f * tach_duty_cycle && angle_tach < 0.0f)
     HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_RESET);
-
 }
-
-inline float csps_correctangle(float angle)
-{
-  if(angle > 180.0f)
-    angle -= 360.0f;
-  else if(angle <= -180.0f)
-    angle += 360.0f;
-  return angle;
-}
-
-/*
-inline float csps_anglediff(float a, float b)
-{
-  if(a >= b)
-    return a - b;
-  else return 360 + a - b;
-}
-*/
 
 inline float csps_getangle14(void)
 {
   static float angle_prev = 0;
-  float now = Delay_Tick;
   float angle, acur, aprev, mult, cur;
   sCspsData data = *CspsDataPtr;
+  float now = Delay_Tick;
 
-  if(!csps_rotates)
+  if(!csps_rotates || !csps_found)
     return 0.0f;
 
   cur = DelayDiff(data.DelayCur, data.DelayPrev);
@@ -262,41 +303,11 @@ inline float csps_getangle14(void)
   {
     angle = angle_prev;
   }
-  angle_prev = angle;
 
-  return angle;
-}
+  //Check for NaNs
+  if(angle != angle)
+    angle = 0.0f;
 
-inline float csps_getangle23(void)
-{
-  static float angle_prev = 0;
-  float now = Delay_Tick;
-  float angle, acur, aprev, mult, cur;
-  sCspsData data = *CspsDataPtr;
-
-  if(!csps_rotates)
-    return 0.0f;
-
-  cur = DelayDiff(data.DelayCur, data.DelayPrev);
-  now = DelayDiff(now, data.DelayPrev);
-
-  acur = data.AngleCur23;
-  aprev = data.AnglePrev23;
-
-  if(acur < aprev)
-    acur += 360.0f;
-
-  angle = acur - aprev;
-  mult = angle / cur;
-  angle = mult * now + aprev;
-
-  while(angle > 180.0f)
-    angle -= 360.0f;
-
-  if((angle - angle_prev < 0.0f && angle - angle_prev > -90.0f) || angle - angle_prev > 90.0f)
-  {
-    angle = angle_prev;
-  }
   angle_prev = angle;
 
   return angle;
@@ -364,6 +375,7 @@ inline void csps_loop(void)
     csps_rpm_gui = 0;
     csps_rotates = 0;
     csps_period = 1.0f / csps_rpm;
+    HAL_GPIO_WritePin(TACHOMETER_GPIO_Port, TACHOMETER_Pin, GPIO_PIN_RESET);
   }
 
   if(DelayDiff(now, last_error_null) > 50000)
@@ -373,4 +385,3 @@ inline void csps_loop(void)
   }
 
 }
-

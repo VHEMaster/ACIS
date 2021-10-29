@@ -13,5 +13,3 @@ extern float csps_getuspa(void);
 extern uint8_t csps_isrotates(void);
 extern uint8_t csps_isfound(void);
 extern uint8_t csps_iserror(void);
-
-extern float csps_correctangle(float angle);
